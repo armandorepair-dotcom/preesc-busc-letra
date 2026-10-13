@@ -1,0 +1,538 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Busca las Letras - Juego Educativo PWA</title>
+    
+    <!-- PWA Web App Manifest -->
+    <link rel="manifest" href="data:application/manifest+json;base64,ewogICJuYW1lIjogIkJ1c2NhIGxhcyBMZXRyYXMiLAogICJzaG9ydF9uYW1lIjogIkxldHJhcyIsCiAgInN0YXJ0X3VybCI6ICIuIiwKICAiZGlzcGxheSI6ICJzdGFuZGFsb25lIiwKICAiYmFja2dyb3VuZF9jb2xvciI6ICIjRkZGOUVDIiwKICAidGhlbWVfY29sb3IiIjogIiM0QzFGQUQiLAogICJpY29ucyI6IFtdCn0=">
+    <meta name="theme-color" content="#4C1FAD">
+
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600;700&display=swap');
+        
+        body {
+            font-family: 'Fredoka', cursive, sans-serif;
+            touch-action: manipulation;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+
+        /* Hitbox ampliado e interactivo completamente estático */
+        .letter-hitbox {
+            position: absolute;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            z-index: 20;
+            border-radius: 9999px;
+            transition: transform 0.15s ease-in-out;
+        }
+
+        .letter-hitbox:hover {
+            transform: scale(1.08);
+        }
+
+        .letter-hitbox:active {
+            transform: scale(0.92);
+        }
+
+        /* Estilo visual estático de la letra oculta en la ilustración */
+        .hidden-letter {
+            font-family: 'Fredoka', cursive, sans-serif;
+            font-weight: 700;
+            color: #2D3748;
+            opacity: 0.82;
+            transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+            pointer-events: none;
+        }
+
+        /* Efecto cuando la letra ha sido encontrada */
+        .letter-hitbox.found .hidden-letter {
+            opacity: 1;
+            color: #FF007A;
+            text-shadow: 0 0 12px rgba(255, 0, 122, 0.6), 0 0 20px rgba(255, 215, 0, 0.8);
+            transform: scale(1.25);
+        }
+
+        /* Animación suave para la confirmación de acierto */
+        @keyframes pulseSuccess {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.3); }
+            100% { transform: scale(1.15); }
+        }
+
+        .animate-found {
+            animation: pulseSuccess 0.4s ease-out forwards;
+        }
+    </style>
+</head>
+<body class="bg-amber-50 min-h-screen flex flex-col justify-between overflow-x-hidden select-none">
+
+    <!-- Encabezado Principal -->
+    <header class="bg-indigo-600 text-white p-3 md:p-4 shadow-lg border-b-4 border-indigo-800">
+        <div class="max-w-5xl mx-auto flex justify-between items-center">
+            <div class="flex items-center space-x-2">
+                <span class="bg-yellow-400 text-indigo-900 font-black px-3 py-1 rounded-2xl text-xl shadow">A-Z</span>
+                <h1 class="text-xl md:text-2xl font-bold tracking-wide">Busca las Letras</h1>
+            </div>
+            
+            <!-- Botón para repetir audio de instrucción -->
+            <button id="speakerBtn" class="flex items-center gap-2 bg-yellow-400 hover:bg-yellow-300 text-indigo-950 font-bold py-2 px-4 rounded-full shadow-md active:scale-95 transition">
+                <i data-lucide="volume-2" class="w-6 h-6"></i>
+                <span class="hidden sm:inline">Repetir Voz</span>
+            </button>
+        </div>
+    </header>
+
+    <!-- Panel Principal -->
+    <main class="flex-1 max-w-5xl w-full mx-auto p-2 sm:p-4 flex flex-col md:flex-row gap-4 items-stretch">
+        
+        <!-- Pestañas Laterales de Nivel (1 a 6) -->
+        <nav class="flex md:flex-col justify-center gap-2 md:w-20 bg-indigo-100 p-2 rounded-2xl border-2 border-indigo-200">
+            <template id="levelTabTemplate">
+                <button class="level-tab flex-1 md:flex-none h-12 md:h-14 rounded-xl font-black text-lg sm:text-xl transition shadow flex items-center justify-center border-b-4">
+                    1
+                </button>
+            </template>
+            <div id="levelTabsContainer" class="flex md:flex-col gap-2 w-full"></div>
+        </nav>
+
+        <!-- Tablero Educativo de Ilustración -->
+        <section class="flex-1 bg-white rounded-3xl p-3 sm:p-5 shadow-xl border-4 border-indigo-200 flex flex-col justify-between relative overflow-hidden">
+            
+            <!-- Barra Superior del Tablero: Título del Nivel y Progreso -->
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
+                <div>
+                    <h2 id="levelTitle" class="text-xl sm:text-2xl font-bold text-indigo-900">Nivel 1</h2>
+                    <p id="levelSubtitle" class="text-sm text-gray-500 font-semibold">Encuentra todas las letras ocultas</p>
+                </div>
+                
+                <!-- Barra de Progreso -->
+                <div class="flex items-center gap-3 bg-indigo-50 px-4 py-2 rounded-2xl border border-indigo-100">
+                    <span id="progressText" class="font-bold text-indigo-700 text-sm whitespace-nowrap">0 / 0</span>
+                    <div class="w-28 sm:w-36 bg-gray-200 h-4 rounded-full overflow-hidden border border-gray-300">
+                        <div id="progressBar" class="bg-emerald-500 h-full transition-all duration-300" style="width: 0%"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Area de Dibujo / Ilustración (Libro de Colorear) -->
+            <div class="relative w-full aspect-[4/3] max-h-[550px] bg-slate-50 border-2 border-slate-200 rounded-2xl overflow-hidden flex items-center justify-center shadow-inner">
+                <!-- SVG de Fondo Ilustrativo de Libro para Colorear -->
+                <div id="svgContainer" class="absolute inset-0 w-full h-full"></div>
+                
+                <!-- Contenedor dinámico de Letras Estáticas e Interactivas -->
+                <div id="lettersContainer" class="absolute inset-0 w-full h-full pointer-events-auto"></div>
+            </div>
+
+            <!-- Panel Inferior de Letras a Encontrar -->
+            <div class="mt-4 pt-3 border-t-2 border-slate-100">
+                <p class="text-xs text-gray-400 font-bold uppercase tracking-wider mb-2">Letras en este nivel:</p>
+                <div id="targetLettersList" class="flex flex-wrap gap-2 sm:gap-3 justify-center min-h-[44px]"></div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Modal de Nivel Completado -->
+    <div id="completedModal" class="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+        <div class="bg-white rounded-3xl p-6 max-w-sm w-full text-center shadow-2xl border-4 border-yellow-400 transform transition-all scale-95">
+            <div class="w-20 h-20 bg-yellow-100 rounded-full flex items-center justify-center mx-auto mb-4 text-yellow-500 shadow-inner">
+                <i data-lucide="star" class="w-12 h-12 fill-yellow-400"></i>
+            </div>
+            <h3 class="text-2xl font-bold text-indigo-950 mb-1">¡LO HICISTE MUY BIEN!</h3>
+            <p class="text-gray-600 mb-6 font-semibold">Has encontrado todas las letras de este dibujo.</p>
+            <button id="nextLevelBtn" class="w-full py-3 bg-emerald-500 hover:bg-emerald-600 text-white font-bold text-lg rounded-2xl shadow-lg border-b-4 border-emerald-700 active:scale-95 transition">
+                Siguiente Nivel
+            </button>
+        </div>
+    </div>
+
+    <!-- Pie de Página -->
+    <footer class="text-center py-2 text-xs text-indigo-400 font-semibold">
+        Juego Educativo Interactivos PWA &bull; Estilo Libro para Colorear
+    </footer>
+
+    <script>
+        /* Región: Datos de los Niveles e Ilustraciones */
+        const LEVELS = [
+            {
+                id: 1,
+                name: "El Desayuno",
+                subtitle: "Vaso de leche y fruta fresca",
+                svg: `
+                    <svg viewBox="0 0 800 600" class="w-full h-full">
+                        <!-- Vaso de leche -->
+                        <path d="M 220 180 L 250 480 Q 250 510 380 510 Q 510 510 510 480 L 540 180 Z" fill="none" stroke="#2D3748" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+                        <ellipse cx="380" cy="180" rx="160" ry="25" fill="none" stroke="#2D3748" stroke-width="6"/>
+                        <ellipse cx="380" cy="240" rx="145" ry="20" fill="none" stroke="#CBD5E1" stroke-width="4" stroke-dasharray="8 8"/>
+                        <!-- Popote / Pajita -->
+                        <path d="M 420 100 L 460 460" stroke="#2D3748" stroke-width="8" stroke-linecap="round"/>
+                        <!-- Plátano -->
+                        <path d="M 520 350 Q 650 360 700 480 Q 600 530 480 440 Q 510 390 520 350 Z" fill="none" stroke="#2D3748" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+                        <!-- Detalles de manteles y fondo -->
+                        <line x1="50" y1="510" x2="750" y2="510" stroke="#E2E8F0" stroke-width="6" stroke-linecap="round"/>
+                    </svg>
+                `,
+                letters: [
+                    { char: "A", x: 32, y: 35, size: 38, rot: -10 },
+                    { char: "E", x: 47, y: 55, size: 36, rot: 5 },
+                    { char: "I", x: 58, y: 28, size: 40, rot: 0 },
+                    { char: "O", x: 68, y: 70, size: 42, rot: 12 },
+                    { char: "U", x: 74, y: 64, size: 38, rot: -8 }
+                ]
+            },
+            {
+                id: 2,
+                name: "Plato de Sopa",
+                subtitle: "Sopa caliente y verduras",
+                svg: `
+                    <svg viewBox="0 0 800 600" class="w-full h-full">
+                        <!-- Plato hondo -->
+                        <ellipse cx="400" cy="360" rx="300" ry="140" fill="none" stroke="#2D3748" stroke-width="6"/>
+                        <ellipse cx="400" cy="340" rx="230" ry="90" fill="none" stroke="#2D3748" stroke-width="5"/>
+                        <!-- Humo de la sopa -->
+                        <path d="M 300 220 Q 330 170 300 120" fill="none" stroke="#94A3B8" stroke-width="5" stroke-linecap="round"/>
+                        <path d="M 400 210 Q 430 150 400 100" fill="none" stroke="#94A3B8" stroke-width="5" stroke-linecap="round"/>
+                        <path d="M 500 230 Q 530 180 500 130" fill="none" stroke="#94A3B8" stroke-width="5" stroke-linecap="round"/>
+                        <!-- Cuchara -->
+                        <path d="M 120 280 Q 200 320 260 350" fill="none" stroke="#2D3748" stroke-width="6" stroke-linecap="round"/>
+                        <ellipse cx="130" cy="270" rx="35" ry="22" fill="none" stroke="#2D3748" stroke-width="5" transform="rotate(-20 130 270)"/>
+                    </svg>
+                `,
+                letters: [
+                    { char: "B", x: 26, y: 48, size: 36, rot: 0 },
+                    { char: "C", x: 42, y: 58, size: 38, rot: 15 },
+                    { char: "D", x: 55, y: 52, size: 36, rot: -10 },
+                    { char: "F", x: 38, y: 22, size: 36, rot: 0 },
+                    { char: "G", x: 62, y: 26, size: 38, rot: 8 }
+                ]
+            },
+            {
+                id: 3,
+                name: "Tazón de Cereal",
+                subtitle: "Rico cereal con fruta",
+                svg: `
+                    <svg viewBox="0 0 800 600" class="w-full h-full">
+                        <!-- Tazón -->
+                        <path d="M 160 260 Q 400 560 640 260 Z" fill="none" stroke="#2D3748" stroke-width="6" stroke-linejoin="round"/>
+                        <ellipse cx="400" cy="260" rx="240" ry="50" fill="none" stroke="#2D3748" stroke-width="6"/>
+                        <!-- Bolitas de cereal -->
+                        <circle cx="280" cy="260" r="22" fill="none" stroke="#2D3748" stroke-width="4"/>
+                        <circle cx="340" cy="275" r="20" fill="none" stroke="#2D3748" stroke-width="4"/>
+                        <circle cx="410" cy="255" r="24" fill="none" stroke="#2D3748" stroke-width="4"/>
+                        <circle cx="480" cy="270" r="21" fill="none" stroke="#2D3748" stroke-width="4"/>
+                        <circle cx="530" cy="250" r="22" fill="none" stroke="#2D3748" stroke-width="4"/>
+                    </svg>
+                `,
+                letters: [
+                    { char: "L", x: 28, y: 44, size: 38, rot: 0 },
+                    { char: "M", x: 42, y: 48, size: 36, rot: -5 },
+                    { char: "N", x: 51, y: 43, size: 36, rot: 5 },
+                    { char: "P", x: 65, y: 45, size: 38, rot: 0 },
+                    { char: "S", x: 49, y: 65, size: 40, rot: -12 }
+                ]
+            },
+            {
+                id: 4,
+                name: "Ensalada Saludable",
+                subtitle: "Tazón con lechuga y tomate",
+                svg: `
+                    <svg viewBox="0 0 800 600" class="w-full h-full">
+                        <!-- Tazón de ensalada -->
+                        <path d="M 180 300 Q 400 540 620 300 Z" fill="none" stroke="#2D3748" stroke-width="6"/>
+                        <ellipse cx="400" cy="300" rx="220" ry="45" fill="none" stroke="#2D3748" stroke-width="6"/>
+                        <!-- Hojas de lechuga -->
+                        <path d="M 250 280 Q 280 200 340 260" fill="none" stroke="#2D3748" stroke-width="5"/>
+                        <path d="M 450 260 Q 520 200 550 280" fill="none" stroke="#2D3748" stroke-width="5"/>
+                        <!-- Rodaja de tomate -->
+                        <circle cx="400" cy="265" r="30" fill="none" stroke="#2D3748" stroke-width="5"/>
+                    </svg>
+                `,
+                letters: [
+                    { char: "R", x: 33, y: 38, size: 38, rot: 0 },
+                    { char: "T", x: 52, y: 36, size: 38, rot: 0 },
+                    { char: "V", x: 38, y: 62, size: 38, rot: 10 },
+                    { char: "Y", x: 62, y: 60, size: 38, rot: -8 },
+                    { char: "Z", x: 48, y: 72, size: 38, rot: 0 }
+                ]
+            },
+            {
+                id: 5,
+                name: "Hora del Té",
+                subtitle: "Tetera y taza de té",
+                svg: `
+                    <svg viewBox="0 0 800 600" class="w-full h-full">
+                        <!-- Tetera -->
+                        <circle cx="340" cy="350" r="130" fill="none" stroke="#2D3748" stroke-width="6"/>
+                        <path d="M 210 330 Q 140 310 150 240 Q 220 250 235 280" fill="none" stroke="#2D3748" stroke-width="6"/>
+                        <path d="M 450 280 L 530 220 L 540 240 L 470 320" fill="none" stroke="#2D3748" stroke-width="6" stroke-linejoin="round"/>
+                        <!-- Taza -->
+                        <path d="M 570 380 L 585 470 Q 585 490 630 490 Q 675 490 675 470 L 690 380 Z" fill="none" stroke="#2D3748" stroke-width="5"/>
+                        <ellipse cx="630" cy="380" rx="60" ry="12" fill="none" stroke="#2D3748" stroke-width="5"/>
+                    </svg>
+                `,
+                letters: [
+                    { char: "J", x: 20, y: 45, size: 38, rot: -5 },
+                    { char: "K", x: 36, y: 55, size: 38, rot: 0 },
+                    { char: "Q", x: 42, y: 35, size: 40, rot: 12 },
+                    { char: "W", x: 64, y: 44, size: 36, rot: 0 },
+                    { char: "X", x: 80, y: 68, size: 38, rot: 0 }
+                ]
+            },
+            {
+                id: 6,
+                name: "Manzana y Galleta",
+                subtitle: "Un bocadillo delicioso",
+                svg: `
+                    <svg viewBox="0 0 800 600" class="w-full h-full">
+                        <!-- Manzana -->
+                        <path d="M 300 280 Q 240 200 180 280 Q 140 420 250 480 Q 300 500 350 480 Q 460 420 420 280 Q 360 200 300 280 Z" fill="none" stroke="#2D3748" stroke-width="6"/>
+                        <path d="M 300 260 Q 320 200 330 160" fill="none" stroke="#2D3748" stroke-width="6" stroke-linecap="round"/>
+                        <path d="M 320 200 Q 380 180 390 220 Z" fill="none" stroke="#2D3748" stroke-width="5"/>
+                        <!-- Galleta con chispas -->
+                        <circle cx="580" cy="380" r="100" fill="none" stroke="#2D3748" stroke-width="6"/>
+                        <circle cx="540" cy="340" r="10" fill="#2D3748"/>
+                        <circle cx="620" cy="350" r="12" fill="#2D3748"/>
+                        <circle cx="560" cy="410" r="11" fill="#2D3748"/>
+                        <circle cx="630" cy="420" r="9" fill="#2D3748"/>
+                    </svg>
+                `,
+                letters: [
+                    { char: "A", x: 31, y: 52, size: 40, rot: 0 },
+                    { char: "E", x: 42, y: 30, size: 38, rot: -8 },
+                    { char: "O", x: 68, y: 60, size: 42, rot: 0 },
+                    { char: "S", x: 74, y: 52, size: 38, rot: 10 },
+                    { char: "Z", x: 26, y: 72, size: 38, rot: 0 }
+                ]
+            }
+        ];
+
+        /* Región: Estado de la Aplicación */
+        let currentLevelIndex = 0;
+        let foundLetters = new Set();
+        let synth = window.speechSynthesis;
+        let esVoice = null;
+
+        /* Inicializar la Voz en Español Latino (es-MX prioritario) */
+        function initSpeech() {
+            if (!synth) return;
+            
+            const loadVoices = () => {
+                const voices = synth.getVoices();
+                // Buscar español de México o cualquier voz en español
+                esVoice = voices.find(v => v.lang === 'es-MX') || 
+                          voices.find(v => v.lang.startsWith('es-')) || 
+                          voices.find(v => v.lang.includes('es')) || null;
+            };
+
+            loadVoices();
+            if (speechSynthesis.onvoiceschanged !== undefined) {
+                speechSynthesis.onvoiceschanged = loadVoices;
+            }
+        }
+
+        /* Reproducción de Voz */
+        function speakText(text) {
+            if (!synth) return;
+            
+            // Cancelar reproducción previa para evitar superposición
+            synth.cancel();
+
+            const utterance = new SpeechSynthesisUtterance(text);
+            utterance.rate = 0.9; // Velocidad ligeramente pausada y clara para niños
+            utterance.pitch = 1.1; // Tono amigable
+
+            if (esVoice) {
+                utterance.voice = esVoice;
+                utterance.lang = esVoice.lang;
+            } else {
+                utterance.lang = 'es-MX';
+            }
+
+            synth.speak(utterance);
+        }
+
+        /* Renderizar Botones de Selección de Nivel */
+        function renderLevelTabs() {
+            const container = document.getElementById('levelTabsContainer');
+            const template = document.getElementById('levelTabTemplate');
+            container.innerHTML = '';
+
+            LEVELS.forEach((lvl, index) => {
+                const clone = template.content.cloneNode(true);
+                const btn = clone.querySelector('.level-tab');
+                btn.textContent = lvl.id;
+                
+                if (index === currentLevelIndex) {
+                    btn.classList.add('bg-indigo-600', 'text-white', 'border-indigo-800', 'scale-105');
+                } else {
+                    btn.classList.add('bg-white', 'text-indigo-900', 'border-indigo-200', 'hover:bg-indigo-50');
+                }
+
+                btn.addEventListener('click', () => {
+                    if (currentLevelIndex !== index) {
+                        currentLevelIndex = index;
+                        loadLevel(currentLevelIndex);
+                    }
+                });
+
+                container.appendChild(clone);
+            });
+        }
+
+        /* Cargar Nivel Actual */
+        function loadLevel(index) {
+            const level = LEVELS[index];
+            foundLetters.clear();
+
+            // Actualizar interfaz
+            document.getElementById('levelTitle').textContent = `Nivel ${level.id}: ${level.name}`;
+            document.getElementById('levelSubtitle').textContent = level.subtitle;
+            document.getElementById('svgContainer').innerHTML = level.svg;
+
+            renderLevelTabs();
+            renderLetters(level);
+            updateProgress();
+
+            // Anuncio por voz obligatorio al iniciar nivel
+            setTimeout(() => {
+                speakText("BUSCA LAS LETRAS");
+            }, 300);
+        }
+
+        /* Renderizar Letras en Posiciones Estáticas e Hitboxes Ampliados */
+        function renderLetters(level) {
+            const container = document.getElementById('lettersContainer');
+            const targetList = document.getElementById('targetLettersList');
+            container.innerHTML = '';
+            targetList.innerHTML = '';
+
+            level.letters.forEach((item, idx) => {
+                // 1. Crear elemento para el tablero principal
+                const hitbox = document.createElement('div');
+                hitbox.className = 'letter-hitbox';
+                
+                // Hitbox amplio de al menos 54px x 54px para máxima facilidad de toque
+                const boxSize = Math.max(item.size * 1.6, 54);
+                hitbox.style.width = `${boxSize}px`;
+                hitbox.style.height = `${boxSize}px`;
+                hitbox.style.left = `${item.x}%`;
+                hitbox.style.top = `${item.y}%`;
+                hitbox.style.transform = 'translate(-50%, -50%)';
+
+                const letterSpan = document.createElement('span');
+                letterSpan.className = 'hidden-letter';
+                letterSpan.textContent = item.char;
+                letterSpan.style.fontSize = `${item.size}px`;
+                // Rotación fija e inmutable (sin animaciones de baile/movimiento)
+                if (item.rot) {
+                    letterSpan.style.transform = `rotate(${item.rot}deg)`;
+                }
+
+                hitbox.appendChild(letterSpan);
+
+                // Evento de clic / toque estable
+                hitbox.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    handleLetterClick(item.char, hitbox, idx);
+                });
+
+                container.appendChild(hitbox);
+
+                // 2. Crear indicador en la lista inferior de letras
+                const targetBadge = document.createElement('div');
+                targetBadge.id = `target-badge-${idx}`;
+                targetBadge.className = 'w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-slate-100 border-2 border-slate-300 flex items-center justify-center font-bold text-lg text-slate-400 transition-all';
+                targetBadge.textContent = item.char;
+                targetList.appendChild(targetBadge);
+            });
+        }
+
+        /* Manejar Clic en Letra */
+        function handleLetterClick(char, hitboxElem, letterIdx) {
+            // Reproducir nombre de la letra por voz de inmediato
+            speakText(char);
+
+            if (!foundLetters.has(letterIdx)) {
+                foundLetters.add(letterIdx);
+
+                // Marcar como encontrada con efectos visuales
+                hitboxElem.classList.add('found');
+                hitboxElem.querySelector('.hidden-letter').classList.add('animate-found');
+
+                // Actualizar badge inferior
+                const badge = document.getElementById(`target-badge-${letterIdx}`);
+                if (badge) {
+                    badge.className = 'w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-pink-500 border-2 border-pink-600 text-white font-black text-xl shadow-md scale-110 flex items-center justify-center transition-all';
+                }
+
+                updateProgress();
+
+                // Verificar si completó el nivel
+                const currentLevel = LEVELS[currentLevelIndex];
+                if (foundLetters.size === currentLevel.letters.length) {
+                    setTimeout(() => {
+                        handleLevelComplete();
+                    }, 800);
+                }
+            }
+        }
+
+        /* Actualizar Barra de Progreso */
+        function updateProgress() {
+            const currentLevel = LEVELS[currentLevelIndex];
+            const total = currentLevel.letters.length;
+            const current = foundLetters.size;
+            const percentage = Math.round((current / total) * 100);
+
+            document.getElementById('progressText').textContent = `${current} / ${total}`;
+            document.getElementById('progressBar').style.width = `${percentage}%`;
+        }
+
+        /* Al Completar un Nivel */
+        function handleLevelComplete() {
+            // Decir la frase requerida exactamente
+            speakText("LO HICISTE MUY BIEN");
+
+            // Mostrar modal
+            const modal = document.getElementById('completedModal');
+            modal.classList.remove('hidden');
+        }
+
+        /* Pasar al Siguiente Nivel */
+        function goToNextLevel() {
+            document.getElementById('completedModal').classList.add('hidden');
+            if (currentLevelIndex < LEVELS.length - 1) {
+                currentLevelIndex++;
+            } else {
+                currentLevelIndex = 0; // Reiniciar al primer nivel si concluye todos
+            }
+            loadLevel(currentLevelIndex);
+        }
+
+        /* Event Listeners Principales */
+        document.addEventListener('DOMContentLoaded', () => {
+            initSpeech();
+            lucide.createIcons();
+
+            // Cargar el nivel inicial
+            loadLevel(currentLevelIndex);
+
+            // Botón de repetir instrucción
+            document.getElementById('speakerBtn').addEventListener('click', () => {
+                speakText("BUSCA LAS LETRAS");
+            });
+
+            // Botón de siguiente nivel en el modal
+            document.getElementById('nextLevelBtn').addEventListener('click', goToNextLevel);
+        });
+    </script>
+</body>
+</html>
